@@ -1,0 +1,19 @@
+services:
+  zac:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: zac-automatic-input
+    working_dir: /app
+    volumes:
+      - ./:/app
+      - ./template:/app/template
+      - ./drivers:/app/drivers
+    ports:
+      - "127.0.0.1:5000:5000"
+    environment:
+      - PYTHONUNBUFFERED=1
+      - CHROME_BIN=/usr/bin/chromium
+      - ZAC_COMPANY_ID=${ZAC_COMPANY_ID:-}
+      - ZAC_BASE_URL=${ZAC_BASE_URL:-}
+    command: python app.py

@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+
+# Virtual environment
+venv/
+.venv/
+
+# Build / packaging artifacts
+build/
+dist/
+*.egg-info/
+
+# macOS
+.DS_Store
+
+# Docker
+*.log
+
+# Local environment variables
+.env
+
+# Excel temporary file
+~$*.xlsx
+
+# Local runtime Excel (do not push)
+zac_info_sheet.xlsx
+data/zac_info_sheet.xlsx
+
+# Unused files
+unused/
+

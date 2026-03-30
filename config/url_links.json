@@ -1,0 +1,11 @@
+{
+  "endpoints": {
+    "login_url": "/User/user_logon.asp",
+    "daily_report_list_url": "/b/daily_report/list",
+    "daily_report_data_url": "/b/api/v2/daily_report/daily_reports/yyyy-mm-dd",
+    "work_registration_url": "/b/api/v2/daily_report/daily_reports/yyyy-mm-dd/data",
+    "work_deletion_url": "/b/api/v2/daily_report/daily_reports/yyyy-mm-dd/data/target_id",
+    "fix_url": "/b/api/v2/daily_report/daily_reports/yyyy-mm-dd/fix",
+    "cancel_fix_url": "/b/api/v2/daily_report/daily_reports/yyyy-mm-dd/cancel_fix"
+  }
+}

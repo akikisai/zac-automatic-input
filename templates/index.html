@@ -1,0 +1,1607 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ZAC 勤怠自動入力</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/index.css') }}">
+</head>
+
+<body>
+  <div class="login-screen" id="login-screen">
+    <div class="login-card">
+      <div class="login-title">ZAC 勤怠自動入力</div>
+
+      <div class="field">
+        <label>ログインID <span class="req">★</span></label>
+        <input id="pre_login_id" type="text" autocomplete="username" placeholder="ログインID">
+      </div>
+
+      <div class="field">
+        <label>パスワード <span class="req">★</span></label>
+        <input id="pre_password" type="password" autocomplete="current-password" placeholder="パスワード">
+      </div>
+
+      <div class="field">
+        <label>ログインURL(自動入力) <span class="req">★</span></label>
+        <input id="login_url" type="url" value="{{ default_urls.login_url }}" disabled>
+      </div>
+
+      <button id="login-submit-btn" disabled>ログイン</button>
+      {% if url_config_warning %}
+      <div class="login-message error">{{ url_config_warning }}</div>
+      {% endif %}
+      <div class="login-message" id="login-message"></div>
+    </div>
+  </div>
+
+  <div id="app-shell" class="hidden">
+    <nav class="topbar">
+      <div class="brand">ZAC<span> 勤怠自動入力</span></div>
+      <div class="status-badge">
+        <div class="dot" id="auth-dot"></div>
+        <span id="auth-text">未ログイン</span>
+      </div>
+      <div class="status-badge">
+        <div class="dot" id="status-dot"></div>
+        <span id="status-text">待機中</span>
+      </div>
+      <div id="validation-hint">必須項目 (★) をすべて入力してください</div>
+      <button id="how-to-btn">使い方</button>
+      <button id="logout-btn" disabled>ログアウト</button>
+      <button id="run-btn" disabled>▶ 実行</button>
+    </nav>
+
+    <div class="layout">
+      <div class="form-panel">
+        <div class="card">
+          <div class="card-title">認証セッション</div>
+          <div class="row row-2">
+            <div class="field">
+              <label>ログインID</label>
+              <input id="session_login_id" type="text" readonly>
+            </div>
+            <div class="field">
+              <label>ログインURL</label>
+              <input id="session_login_url" type="url" readonly>
+            </div>
+          </div>
+          <p style="font-size:11px;color:var(--muted);margin-top:8px">パスワードはログイン後に破棄し、この画面では保持しません。</p>
+        </div>
+
+        <div class="card" id="period-card">
+          <div class="card-title">実行期間</div>
+          <div class="row row-3">
+            <div class="field">
+              <label>対象年 <span class="req">★</span></label>
+              <input id="target_year" type="number" min="2020" max="2099">
+            </div>
+            <div class="field">
+              <label>対象月 <span class="req">★</span></label>
+              <input id="target_month" type="number" min="1" max="12" placeholder="1〜12">
+            </div>
+            <div></div>
+          </div>
+          <div class="row row-2" style="margin-top:10px">
+            <div class="field">
+              <label>開始日（任意）</label>
+              <input id="start_day" type="number" min="1" max="31" placeholder="例: 1">
+            </div>
+            <div class="field">
+              <label>終了日（任意）</label>
+              <input id="end_day" type="number" min="1" max="31" placeholder="例: 31">
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">実行モード <span class="req">★</span></div>
+          <div class="toggle-group">
+            <input class="toggle-option" type="radio" name="mode" id="mode_reg" value="registration" checked>
+            <label class="toggle-label" for="mode_reg">登録モード</label>
+
+            <input class="toggle-option" type="radio" name="mode" id="mode_del" value="bulk_delete">
+            <label class="toggle-label" for="mode_del">一括削除</label>
+
+            <input class="toggle-option" type="radio" name="mode" id="mode_fix" value="bulk_fix">
+            <label class="toggle-label" for="mode_fix">一括確定</label>
+
+            <input class="toggle-option" type="radio" name="mode" id="mode_cfix" value="bulk_cancel_fix">
+            <label class="toggle-label" for="mode_cfix">一括確定解除</label>
+          </div>
+          <div class="check-row" id="bulk_fix_row" style="margin-top:10px">
+            <input type="checkbox" id="registration_bulk_fix" checked>
+            <label for="registration_bulk_fix">登録後に自動確定する</label>
+            <span class="bulk-fix-note">※すでに登録されている場合は、自動で確定解除し削除の上、グリッドのデータに従って登録されます</span>
+          </div>
+          <div id="mode-info-box" class="mode-info-box hidden"></div>
+        </div>
+
+        <div class="card" id="project-card">
+          <div class="card-title">案件設定 <span
+              style="color:var(--muted);font-size:11px;font-weight:400">(登録モードで最低1件)</span></div>
+          <div class="proj-grid" id="proj-grid">
+            <div class="hdr"></div>
+            <div class="hdr">案件 <span class="req">★</span></div>
+            <div class="hdr">売上項目 <span class="req">★</span></div>
+          </div>
+          <div class="project-note-wrap">
+            <span class="project-note">※登録モードで最低1件入力してください。</span>
+            <span class="project-note">※案件情報はlocalStorageに保持されます。有効性もチェックしています。</span>
+          </div>
+        </div>
+
+        <details class="card">
+          <summary>URL 設定（必要時のみ変更）</summary>
+          <div class="url-fields">
+            <div class="field"><label>日報一覧URL <span class="req">★</span></label>
+              <input id="daily_report_list_url" type="url" value="{{ default_urls.daily_report_list_url }}">
+            </div>
+            <div class="field"><label>日報詳細取得URL <span class="req">★</span></label>
+              <input id="daily_report_data_url" type="url" value="{{ default_urls.daily_report_data_url }}">
+            </div>
+            <div class="field"><label>作業登録URL <span class="req">★</span></label>
+              <input id="work_registration_url" type="url" value="{{ default_urls.work_registration_url }}">
+            </div>
+            <div class="field"><label>作業削除URL <span class="req">★</span></label>
+              <input id="work_deletion_url" type="url" value="{{ default_urls.work_deletion_url }}">
+            </div>
+            <div class="field"><label>確定URL <span class="req">★</span></label>
+              <input id="fix_url" type="url" value="{{ default_urls.fix_url }}">
+            </div>
+            <div class="field"><label>確定解除URL <span class="req">★</span></label>
+              <input id="cancel_fix_url" type="url" value="{{ default_urls.cancel_fix_url }}">
+            </div>
+          </div>
+        </details>
+
+        <div class="card" id="daily-card">
+          <div class="card-title">案件時間（分単位）</div>
+          <div id="grid-empty-msg" class="grid-prompt"></div>
+          <div class="grid-wrap hidden" id="grid-wrap-container">
+            <table id="daily-table">
+              <thead id="grid-head"></thead>
+              <tbody id="grid-body"></tbody>
+            </table>
+          </div>
+          <div class="project-note-wrap">
+            <span class="project-note">※分単位で入力してください。</span>
+            <span class="project-note">※欄の右または、上の「残りすべて」ボタンでKOT取り込み済み時間から他案件の分数を引いた分数が自動に入ります。</span>
+            <span class="project-note">※「残りすべて」は1つの日付で1つのみ設定できます。</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="log-panel">
+        <div class="log-header">
+          <span>実行ログ</span>
+          <button id="clear-log" type="button">ログをクリア</button>
+        </div>
+        <div id="log"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 使い方モーダル -->
+  <div class="modal-overlay hidden" id="how-to-modal">
+    <div class="modal-box">
+      <button class="modal-close" id="how-to-close" title="閉じる">✕</button>
+      <div class="modal-title">使い方</div>
+
+      <div class="modal-section">
+        <h2>基本的な流れ</h2>
+        <ol>
+          <li>ログイン画面でZACのログインID・パスワード・ログインURLを入力し「ログインして開始」をクリック</li>
+          <li>実行モードを選択（通常は<strong>登録モード</strong>）</li>
+          <li>案件設定で案件をキーワード検索し、売上項目（工数種別）を選択</li>
+          <li>対象年月を入力すると案件時間グリッドが表示されます</li>
+          <li>グリッドに各日付の作業時間（分単位）を入力</li>
+          <li>「▶ 実行」ボタンをクリックするとZACへ自動登録が開始されます</li>
+        </ol>
+      </div>
+
+      <div class="modal-section">
+        <h2>案件設定</h2>
+        <p>最大5案件まで設定できます。案件名またはコードで検索して選択します（ログイン後に検索可能）。<br>
+          案件を選択すると、その案件の売上項目（工数種別）が自動で一覧表示されます。<br>
+          「実績工数」「間接工数」などから該当するものを選択してください。</p>
+      </div>
+
+      <div class="modal-section">
+        <h2>案件時間グリッド</h2>
+        <ul>
+          <li>各セルに作業時間を<strong>分単位</strong>で入力します（例：90 → 1時間30分）</li>
+          <li>稼働なしの日は空欄のままにしてください（自動的にスキップされます）</li>
+          <li>各セル右端の <strong>↺</strong> ボタンを押すと「残りすべて」タグが表示され、ZAC実行時にKOT勤務時間から他案件分を引いた残り時間が自動入力されます（1日1セルのみ設定可）</li>
+          <li>「残りすべて」状態のセルの <strong>×</strong> ボタンをクリックすると設定を解除できます</li>
+          <li>列ヘッダーの <strong>全列「残りすべて」</strong> ボタンで、その列の全日付を一括設定できます</li>
+          <li>列ヘッダーの <strong>全列「クリア」</strong> ボタンでその列の全入力をリセットできます</li>
+        </ul>
+      </div>
+
+      <div class="modal-section">
+        <h2>実行モード</h2>
+        <ul>
+          <li><strong>登録モード</strong>：案件時間グリッドで入力した時間をZACに登録します。「登録後に自動確定する」チェックをONにすると登録と同時に確定も行います</li>
+          <li><strong>一括削除</strong>：対象期間のZAC登録済みデータをすべて削除します</li>
+          <li><strong>一括確定</strong>：対象期間の登録済み日報を一括で確定します</li>
+          <li><strong>一括確定解除</strong>：対象期間の確定済み日報を一括で解除します</li>
+        </ul>
+      </div>
+
+      <div class="modal-section tips-box">
+        <h2>💡 Tips — 案件が実質1つだけのケース</h2>
+        <p>間接工数が1案件あり、残りの稼働時間をすべて別の案件（実績工数）に割り当てたい場合の最も簡単な手順です：</p>
+        <h3>手順</h3>
+        <ol>
+          <li>案件1を<strong>間接工数</strong>に設定し、各日付に間接工数の時間（分）を入力する</li>
+          <li>案件2を<strong>実績工数</strong>に設定し、列ヘッダーの <strong>全列「残りすべて」</strong> ボタンをクリック</li>
+          <li>案件2の全日付が「残りすべて」状態になり、ZAC実行時にKOT勤務時間から案件1の時間を差し引いた残り時間が自動入力されます</li>
+        </ol>
+        <p
+          style="margin-top:10px;padding:8px 10px;background:rgba(0,0,0,0.2);border-radius:6px;color:var(--muted);font-size:11px;">
+          ※ KOT勤務時間がない日（祝日・休日など）は自動的にスキップされます。<br>
+          「全列「残りすべて」」を設定していても、稼働がない日には入力されないため<strong>祝日を気にせず</strong>まとめて設定して問題ありません。
+        </p>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="modal-overlay hidden" id="completion-modal">
+    <div class="modal-box completion-modal-box">
+      <button class="modal-close" id="completion-close" title="閉じる">✕</button>
+      <div class="modal-title">処理が完了しました</div>
+
+      <div class="modal-section completion-summary-box">
+        <p>処理が完了しました。実行ログを確認し、問題がないかを確認してください。</p>
+      </div>
+
+      <div class="modal-section">
+        <h2>次の確認</h2>
+        <p id="completion-next-step"></p>
+      </div>
+
+      <div class="modal-section completion-action-row">
+        <a id="completion-login-link" class="completion-link" href="#" target="_blank"
+          rel="noopener noreferrer">ZACログイン画面を開く</a>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const $ = id => document.getElementById(id);
+    const runBtn = $('run-btn');
+    const logoutBtn = $('logout-btn');
+    const loginSubmitBtn = $('login-submit-btn');
+    const loginMessage = $('login-message');
+    const loginScreen = $('login-screen');
+    const appShell = $('app-shell');
+    const statusDot = $('status-dot');
+    const statusText = $('status-text');
+    const authDot = $('auth-dot');
+    const authText = $('auth-text');
+    const vHint = $('validation-hint');
+    const logEl = $('log');
+
+    let csrfToken = '';
+    let isRunning = false;
+    let isLoggedIn = false;
+    let evtSource = null;
+    let streamExpectingReconnect = false;
+    let holidayMap = null;
+    let holidayFetchStarted = false;
+    const PROJECT_STORE_KEY = 'zac.projectSelections.v1';
+    const LOGIN_ID_STORE_KEY = 'zac.loginId.v1';
+
+    function ensureHolidayMapLoaded() {
+      if (holidayMap !== null || holidayFetchStarted) return;
+      holidayFetchStarted = true;
+      fetch('https://holidays-jp.github.io/api/v1/date.json', { cache: 'no-store' })
+        .then(res => res.ok ? res.json() : {})
+        .then(data => {
+          holidayMap = (data && typeof data === 'object') ? data : {};
+        })
+        .catch(() => {
+          holidayMap = {};
+        })
+        .finally(() => {
+          holidayFetchStarted = false;
+          buildGrid();
+        });
+    }
+
+    function getHolidayName(dateStr) {
+      if (!holidayMap) return '';
+      return holidayMap[dateStr] || '';
+    }
+
+    function loadLoginIdStore() {
+      return localStorage.getItem(LOGIN_ID_STORE_KEY) || '';
+    }
+
+    function saveLoginIdStore(loginId) {
+      const value = (loginId || '').trim();
+      if (!value) {
+        localStorage.removeItem(LOGIN_ID_STORE_KEY);
+        return;
+      }
+      localStorage.setItem(LOGIN_ID_STORE_KEY, value);
+    }
+
+    function restoreLoginIdStore() {
+      const stored = loadLoginIdStore();
+      if (!stored) return;
+      const pre = $('pre_login_id');
+      if (pre && !pre.value.trim()) pre.value = stored;
+    }
+
+    function loadProjectStore() {
+      try {
+        return JSON.parse(localStorage.getItem(PROJECT_STORE_KEY) || '{}');
+      } catch {
+        return {};
+      }
+    }
+
+    function saveProjectStore(store) {
+      localStorage.setItem(PROJECT_STORE_KEY, JSON.stringify(store));
+    }
+
+    function setProjectInvalidTag(idx, invalid) {
+      const tag = $(`proj_invalid_tag_${idx}`);
+      if (!tag) return;
+      tag.classList.toggle('hidden', !invalid);
+    }
+
+    function updateProjectClearButton(idx) {
+      const btn = $(`proj_clear_btn_${idx}`);
+      if (!btn) return;
+      const hasProject = !!$(`proj_id_${idx}`)?.value?.trim();
+      const hasSale = !!$(`proj_sale_${idx}`)?.value?.trim();
+      const hasSearch = !!$(`proj_search_${idx}`)?.value?.trim();
+      btn.classList.toggle('hidden', !(hasProject || hasSale || hasSearch));
+    }
+
+    function persistProjectSelection(idx) {
+      const store = loadProjectStore();
+      const pid = $(`proj_id_${idx}`)?.value?.trim() || '';
+      const pname = $(`proj_name_${idx}`)?.value?.trim() || '';
+      const saleId = $(`proj_sale_${idx}`)?.value?.trim() || '';
+      const searchText = $(`proj_search_${idx}`)?.value?.trim() || '';
+      const saleLabel = $(`proj_sale_val_text_${idx}`)?.textContent?.trim() || '';
+      const trigger = $(`proj_sale_trigger_${idx}`);
+      const saleCaption = trigger?.querySelector('.sale-badge')?.textContent?.trim() || '';
+
+      if (!pid && !saleId && !searchText) {
+        delete store[idx];
+      } else {
+        store[idx] = {
+          project_id: pid,
+          project_name: pname,
+          sale_id: saleId,
+          search_text: searchText,
+          sale_label: saleLabel,
+          sale_caption: saleCaption,
+        };
+      }
+      saveProjectStore(store);
+    }
+
+    function restoreProjectSelection(idx) {
+      const store = loadProjectStore();
+      const data = store[idx];
+      if (!data) return;
+
+      const searchEl = $(`proj_search_${idx}`);
+      const hidId = $(`proj_id_${idx}`);
+      const hidName = $(`proj_name_${idx}`);
+      const hidSale = $(`proj_sale_${idx}`);
+      const trigger = $(`proj_sale_trigger_${idx}`);
+      const trigText = $(`proj_sale_val_text_${idx}`);
+
+      if (searchEl) searchEl.value = data.search_text || data.project_name || '';
+      if (hidId) hidId.value = data.project_id || '';
+      if (hidName) hidName.value = data.project_name || '';
+      if (hidSale) hidSale.value = data.sale_id || '';
+      if (trigger) trigger.classList.toggle('disabled', !data.project_id);
+      if (trigText) {
+        if (data.sale_id && data.sale_label) {
+          trigText.textContent = data.sale_label;
+          trigText.classList.add('selected');
+        } else if (data.project_id) {
+          trigText.textContent = '売上項目を選択';
+          trigText.classList.remove('selected');
+        } else {
+          trigText.textContent = '← 案件を先に選択';
+          trigText.classList.remove('selected');
+        }
+      }
+      if (trigger) {
+        const existing = trigger.querySelector('.sale-badge');
+        if (existing) existing.remove();
+        if (data.sale_caption) {
+          const b = document.createElement('span');
+          b.className = 'sale-badge';
+          b.textContent = data.sale_caption;
+          const chev = trigger.querySelector('.proj-sale-chevron');
+          chev ? trigger.insertBefore(b, chev) : trigger.appendChild(b);
+        }
+      }
+      setProjectInvalidTag(idx, false);
+      updateProjectClearButton(idx);
+    }
+
+    async function validateStoredProjectsAfterLogin() {
+      const baseUrl = getBaseUrl();
+      if (!baseUrl || !isLoggedIn) return;
+
+      const year = parseInt($('target_year').value, 10) || new Date().getFullYear();
+      const month = parseInt($('target_month').value, 10) || (new Date().getMonth() + 1);
+      const baseDate = `${year}-${String(month).padStart(2, '0')}-01`;
+
+      for (let i = 1; i <= 5; i++) {
+        const pid = $(`proj_id_${i}`)?.value?.trim();
+        const pname = $(`proj_name_${i}`)?.value?.trim();
+        if (!pid || !pname) {
+          setProjectInvalidTag(i, false);
+          continue;
+        }
+
+        try {
+          const res = await fetch(
+            `/api/project_search?keyword=${encodeURIComponent(pname)}&base_url=${encodeURIComponent(baseUrl)}&base_date=${baseDate}`
+          );
+          if (!res.ok) {
+            setProjectInvalidTag(i, true);
+            continue;
+          }
+          const data = await res.json();
+          const items = data.Value || [];
+          const valid = items.some(item => String(item.Id) === String(pid));
+          setProjectInvalidTag(i, !valid);
+        } catch {
+          setProjectInvalidTag(i, true);
+        }
+      }
+    }
+
+    function setLoginMessage(text, type = '', isSub = false) {
+      if (!text) {
+        loginMessage.innerHTML = '';
+        return;
+      }
+      const line = document.createElement('div');
+      line.className = 'login-message-line';
+      if (type) line.classList.add(type);
+      if (isSub) line.classList.add('sub');
+      line.textContent = text;
+      loginMessage.appendChild(line);
+    }
+
+    function setLoggedInUI(loggedIn) {
+      isLoggedIn = loggedIn;
+      if (loggedIn) {
+        loginScreen.classList.add('hidden');
+        appShell.classList.remove('hidden');
+      } else {
+        appShell.classList.add('hidden');
+        loginScreen.classList.remove('hidden');
+      }
+
+      authDot.className = `dot ${loggedIn ? 'idle' : 'off'}`;
+      authText.textContent = loggedIn ? 'ログイン済み' : '未ログイン';
+      logoutBtn.disabled = !loggedIn || isRunning;
+      setRunButtonState();
+    }
+
+    function setRunningUI(running) {
+      isRunning = running;
+      statusDot.className = `dot ${running ? 'running' : 'idle'}`;
+      statusText.textContent = running ? '実行中' : '待機中';
+      runBtn.classList.toggle('running', running);
+      runBtn.textContent = running ? '実行中...' : '▶ 実行';
+      loginSubmitBtn.disabled = running || !csrfToken;
+      logoutBtn.disabled = !isLoggedIn || running;
+      setRunButtonState();
+    }
+
+    function appendLog(message, color = null, done = false) {
+      const div = document.createElement('div');
+      div.className = 'log-line';
+      if (color) div.classList.add(color);
+      if (done) div.classList.add('done');
+      div.textContent = message;
+      logEl.appendChild(div);
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    function appendLogSegments(segments, done = false) {
+      const div = document.createElement('div');
+      div.className = 'log-line';
+      if (done) div.classList.add('done');
+      segments.forEach(seg => {
+        const span = document.createElement('span');
+        span.className = seg.color ? `log-seg-${seg.color}` : '';
+        span.textContent = seg.text || '';
+        div.appendChild(span);
+      });
+      logEl.appendChild(div);
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    function hideCompletionModal() {
+      $('completion-modal')?.classList.add('hidden');
+    }
+
+    function showCompletionModal() {
+      const loginUrl = $('login_url')?.value?.trim() || '';
+      const year = $('target_year')?.value?.trim();
+      const month = $('target_month')?.value?.trim();
+      const monthLabel = year && month ? `${year}年${Number(month)}月` : '対象月';
+      const nextStep = $('completion-next-step');
+      const loginLink = $('completion-login-link');
+
+      if (nextStep) {
+        nextStep.textContent = `ログに問題がなければ、ZACログイン画面を開き、${monthLabel}の勤怠を確認のうえ「月報確定」をしてください。`;
+      }
+
+      if (loginLink) {
+        loginLink.href = loginUrl || '#';
+        loginLink.classList.toggle('disabled', !loginUrl);
+        loginLink.setAttribute('aria-disabled', loginUrl ? 'false' : 'true');
+      }
+
+      $('completion-modal')?.classList.remove('hidden');
+    }
+
+    function clearRequiredMarks() {
+      document.querySelectorAll('.required-empty').forEach(el => el.classList.remove('required-empty'));
+    }
+
+    function markRequired(el) {
+      if (el) el.classList.add('required-empty');
+    }
+
+    function mode() {
+      return (document.querySelector('input[name="mode"]:checked') || {}).value || 'registration';
+    }
+
+    function isRegistrationMode() {
+      return mode() === 'registration';
+    }
+
+    function atLeastOneProject() {
+      for (let i = 1; i <= 5; i++) {
+        const pid = $(`proj_id_${i}`).value.trim();
+        const sid = $(`proj_sale_${i}`).value.trim();
+        if (pid && sid) return true;
+      }
+      return false;
+    }
+
+    function validateForRun() {
+      clearRequiredMarks();
+      let ok = true;
+
+      const year = $('target_year').value.trim();
+      const month = $('target_month').value.trim();
+      if (!year) { markRequired($('target_year')); ok = false; }
+      if (!month) { markRequired($('target_month')); ok = false; }
+
+      const requiredUrls = [
+        'login_url',
+        'daily_report_data_url',
+        'work_registration_url',
+        'work_deletion_url',
+        'fix_url',
+        'cancel_fix_url'
+      ];
+      requiredUrls.forEach(id => {
+        const el = $(id);
+        if (!el.value.trim()) {
+          markRequired(el);
+          ok = false;
+        }
+      });
+
+      if (isRegistrationMode() && !atLeastOneProject()) {
+        for (let i = 1; i <= 5; i++) {
+          const pid = $(`proj_id_${i}`);
+          const sid = $(`proj_sale_${i}`);
+          if (!pid.value.trim() && !sid.value.trim()) {
+            markRequired($(`proj_search_${i}`));
+            markRequired($(`proj_sale_trigger_${i}`));
+          }
+        }
+        ok = false;
+      }
+
+      vHint.classList.toggle('visible', !ok);
+      return ok;
+    }
+
+    function setRunButtonState() {
+      runBtn.disabled = !isLoggedIn || isRunning;
+    }
+
+    function hasConfiguredProjectAt(projIdxZeroBase) {
+      const idx = projIdxZeroBase + 1;
+      const pid = $(`proj_id_${idx}`)?.value?.trim();
+      const sid = $(`proj_sale_${idx}`)?.value?.trim();
+      return !!pid && !!sid;
+    }
+
+    function clearRestUiSilently(inputEl, btn) {
+      if (!inputEl || !btn) return;
+      btn.classList.remove('active');
+      btn.innerHTML = '↺';
+      btn.title = '「残りすべて」として設定 (クリックで解除)';
+      const badge = inputEl.parentNode?.querySelector('.rest-badge');
+      if (badge) badge.remove();
+      inputEl.style.display = '';
+      inputEl.removeAttribute('data-rest-active');
+    }
+
+    function updateGridColumnActivation() {
+      const registration = isRegistrationMode();
+      const cells = document.querySelectorAll('#grid-body td.time-cell[data-proj]');
+      cells.forEach(td => {
+        const projIdx = Number(td.getAttribute('data-proj'));
+        const hasProject = hasConfiguredProjectAt(projIdx);
+        const enabled = registration && hasProject;
+        const inp = td.querySelector('input.time-input');
+        const btn = td.querySelector('.rest-btn');
+        if (!inp || !btn) return;
+
+        if (!hasProject) {
+          if (inp.getAttribute('data-rest-active') === 'true') {
+            clearRestUiSilently(inp, btn);
+          }
+          inp.value = '';
+        }
+
+        inp.disabled = !enabled;
+        btn.disabled = !enabled;
+        td.classList.toggle('disabled', !enabled);
+      });
+    }
+
+    function applyModeUI() {
+      const registration = isRegistrationMode();
+      const projectCard = $('project-card');
+      const dailyCard = $('daily-card');
+      const bulkFixRow = $('bulk_fix_row');
+      const modeInfoBox = $('mode-info-box');
+
+      projectCard.classList.toggle('disabled', !registration);
+      dailyCard.classList.toggle('disabled', !registration);
+      bulkFixRow.classList.toggle('hidden', !registration);
+
+      const modeDescriptions = {
+        registration: null,
+        bulk_delete: '対象期間中、ZAC に登録済みの作業データを<strong>すべて削除</strong>します。<br>対象年月・開始日・終了日を確認のうえ、<strong>▶ 実行</strong> ボタンを押してください。',
+        bulk_fix: '対象期間の日報を<strong>一括で確定</strong>します。確定すると修正できなくなります。<br>対象年月・開始日・終了日を確認し、<strong>▶ 実行</strong> ボタンを押してください。',
+        bulk_cancel_fix: '対象期間の<strong>確定済み日報を一括で解除</strong>します。<br>対象年月・開始日・終了日を確認し、<strong>▶ 実行</strong> ボタンを押してください。',
+      };
+      const desc = modeDescriptions[mode()];
+      if (modeInfoBox) {
+        if (desc) {
+          modeInfoBox.innerHTML = desc;
+          modeInfoBox.classList.remove('hidden');
+          modeInfoBox.classList.add('warn');
+        } else {
+          modeInfoBox.classList.add('hidden');
+          modeInfoBox.classList.remove('warn');
+        }
+      }
+
+      for (let i = 1; i <= 5; i++) {
+        const searchEl = $(`proj_search_${i}`);
+        const triggerEl = $(`proj_sale_trigger_${i}`);
+        const hasProject = !!$(`proj_id_${i}`)?.value;
+        if (searchEl) searchEl.disabled = !registration;
+        if (triggerEl) triggerEl.classList.toggle('disabled', !registration || !hasProject);
+      }
+      updateGridColumnActivation();
+      $('registration_bulk_fix').disabled = !registration;
+
+      if (!registration) vHint.classList.remove('visible');
+    }
+
+    function daysInMonth(y, m) {
+      return new Date(y, m, 0).getDate();
+    }
+
+    function getProjectNames() {
+      return Array.from({ length: 5 }, (_, i) => {
+        const name = $(`proj_name_${i + 1}`).value.trim();
+        return name || `案件${i + 1}`;
+      });
+    }
+
+    function buildGrid() {
+      ensureHolidayMapLoaded();
+      const y = parseInt($('target_year').value, 10);
+      const m = parseInt($('target_month').value, 10);
+      const head = $('grid-head');
+      const body = $('grid-body');
+      const emptyMsg = $('grid-empty-msg');
+      const gridHint = $('grid-hint');
+      head.innerHTML = '';
+      body.innerHTML = '';
+
+      const gridWrap = $('grid-wrap-container');
+      const hasYear = y >= 2020 && y <= 2099;
+      const hasMonth = m >= 1 && m <= 12;
+      const hasProject = atLeastOneProject();
+
+      const missingItems = [];
+      if (!hasYear || !hasMonth) missingItems.push('<li>対象年・対象月</li>');
+      if (!hasProject) missingItems.push('<li>案件（案件名＋売上項目）を少なくとも1件</li>');
+
+      if (missingItems.length > 0) {
+        if (emptyMsg) {
+          emptyMsg.innerHTML = '案件時間グリッドを表示するには、以下を入力してください：<ul>' + missingItems.join('') + '</ul>';
+          emptyMsg.classList.remove('hidden');
+        }
+        if (gridWrap) gridWrap.classList.add('hidden');
+        if (gridHint) gridHint.classList.add('hidden');
+        return;
+      }
+
+      if (emptyMsg) emptyMsg.classList.add('hidden');
+      if (gridWrap) gridWrap.classList.remove('hidden');
+      if (gridHint) gridHint.classList.remove('hidden');
+
+      const DOW = ['日', '月', '火', '水', '木', '金', '土'];
+      const days = daysInMonth(y, m);
+      const names = getProjectNames();
+
+      const hrow = head.insertRow();
+      const dth = document.createElement('th');
+      dth.textContent = '日付';
+      hrow.appendChild(dth);
+      names.forEach(n => {
+        const th = document.createElement('th');
+        th.textContent = n;
+        hrow.appendChild(th);
+      });
+
+      // ── control row (one-click "all rest" + "clear" per column) ──
+      const ctrlRow = head.insertRow();
+      const ctrlDateTh = document.createElement('th');
+      ctrlDateTh.className = 'col-ctrl-date';
+      ctrlRow.appendChild(ctrlDateTh);
+      for (let p = 0; p < names.length; p++) {
+        const cth = document.createElement('th');
+        cth.className = 'col-ctrl-cell';
+
+        const allBtn = document.createElement('button');
+        allBtn.type = 'button';
+        allBtn.className = 'col-all-btn';
+        allBtn.textContent = '全列「残りすべて」';
+        allBtn.title = 'この列の全日付を「残りすべて」に設定';
+        allBtn.addEventListener('click', () => applyColAllRest(p));
+
+        const clrBtn = document.createElement('button');
+        clrBtn.type = 'button';
+        clrBtn.className = 'col-clear-btn';
+        clrBtn.textContent = '全列「クリア」';
+        clrBtn.title = 'この列の全入力をクリア';
+        clrBtn.addEventListener('click', () => clearColAll(p));
+
+        cth.appendChild(allBtn);
+        cth.appendChild(clrBtn);
+        ctrlRow.appendChild(cth);
+      }
+
+      for (let d = 1; d <= days; d++) {
+        const row = body.insertRow();
+        const date = new Date(y, m - 1, d);
+        const dow = date.getDay();
+        const dateStr = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+        const holidayName = getHolidayName(dateStr);
+        const isHoliday = !!holidayName;
+
+        // ── date cell (fixed) ──────────────────────────────────────
+        const dateCell = row.insertCell();
+        dateCell.className = `date-cell${dow === 0 || dow === 6 ? ' weekend' : ''}${isHoliday ? ' holiday' : ''}`;
+        if (isHoliday) dateCell.title = holidayName;
+
+        const dateInner = document.createElement('div');
+        dateInner.className = 'date-cell-inner';
+        const dateLabel = document.createElement('span');
+        dateLabel.className = 'date-cell-label';
+        dateLabel.textContent = `${m}/${d}(${DOW[dow]})`;
+        dateInner.appendChild(dateLabel);
+        if (isHoliday) {
+          const holidayTag = document.createElement('span');
+          holidayTag.className = 'holiday-tag';
+          holidayTag.textContent = '祝日';
+          dateInner.appendChild(holidayTag);
+        }
+        dateCell.appendChild(dateInner);
+
+        // ── data cells (projectsX + rest button) ───────────────────
+        for (let p = 0; p < 5; p++) {
+          const td = row.insertCell();
+          td.className = 'time-cell';
+          td.id = `time_cell_${dateStr}_${p}`;
+          td.setAttribute('data-date', dateStr);
+          td.setAttribute('data-proj', p);
+
+          const inp = document.createElement('input');
+          inp.type = 'text';
+          inp.className = 'time-input';
+          inp.placeholder = '-';
+          inp.id = `time_input_${dateStr}_${p}`;
+          td.appendChild(inp);
+
+          // rest button
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'rest-btn';
+          btn.innerHTML = '↺';
+          btn.setAttribute('data-date', dateStr);
+          btn.setAttribute('data-proj-idx', p);
+          btn.title = '「残りすべて」として設定 (クリックで解除)';
+          btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            if (btn.classList.contains('active')) {
+              resetRestTime(dateStr, p, inp, btn);
+            } else {
+              applyRestTime(dateStr, p, inp, btn);
+            }
+          });
+          td.appendChild(btn);
+        }
+      }
+      applyModeUI();
+    }
+
+    function applyRestTime(dateStr, projIdx, inputEl, btn) {
+      if (!hasConfiguredProjectAt(projIdx)) {
+        appendLog('案件と売上項目を設定した列でのみ「残りすべて」を使えます。', 'orange');
+        return;
+      }
+
+      // check if another rest button is already used on this date
+      const row = inputEl.closest('tr');
+      const otherUsedBtn = row?.querySelector('.rest-btn.active');
+      if (otherUsedBtn && otherUsedBtn !== btn) {
+        appendLog(`この日付は既に「残りすべて」を設定したセルがあります。1日に1つだけ設定できます。`, 'orange');
+        return;
+      }
+
+      // get project name
+      const projNameIdx = projIdx + 1;
+      const projName = $(`proj_name_${projNameIdx}`)?.value.trim() || `案件${projNameIdx}`;
+
+      // calculate total input time (excluding rest entries)
+      let totalInputMins = 0;
+      const cells = document.querySelectorAll(`[data-date="${dateStr}"][data-proj]`);
+      cells.forEach((c, idx) => {
+        const inp = c.querySelector('input.time-input');
+        if (inp && inp.value && inp.value.toLowerCase() !== 'rest') {
+          const v = parseInt(inp.value, 10);
+          if (!isNaN(v) && idx !== projIdx) {
+            totalInputMins += v;
+          }
+        }
+      });
+
+      // Parse date for display
+      const [yr, mo, dy] = dateStr.split('-');
+      const displayDate = `${parseInt(mo)}月${parseInt(dy)}日`;
+
+      // Output log with project name and date
+      appendLog(`━━━━${displayDate}：${projName}━━━━`);
+      appendLogSegments([
+        { text: `${displayDate} のKOT勤務時間 - 他案件稼働合計時間`, color: 'green' },
+        { text: ' の分数が自動で入るようになります' },
+      ]);
+
+      // mark button as active (reset mode)
+      btn.classList.add('active');
+      btn.innerHTML = '×';
+      btn.title = 'クリックで「残りすべて」を解除';
+
+      // Display rest badge in input
+      inputEl.value = '';
+      const badge = document.createElement('span');
+      badge.className = 'rest-badge';
+      badge.textContent = '残りすべて';
+      inputEl.parentNode.insertBefore(badge, btn);
+      inputEl.style.display = 'none';
+      inputEl.setAttribute('data-rest-active', 'true');
+    }
+
+    function resetRestTime(dateStr, projIdx, inputEl, btn) {
+      // Remove rest state
+      btn.classList.remove('active');
+      btn.innerHTML = '↺';
+      btn.title = '「残りすべて」として設定 (クリックで解除)';
+
+      // Remove rest badge
+      const badge = inputEl.parentNode?.querySelector('.rest-badge');
+      if (badge) badge.remove();
+
+      // Show input again
+      inputEl.style.display = '';
+      inputEl.value = '';
+      inputEl.removeAttribute('data-rest-active');
+
+      // Log
+      const projNameIdx = projIdx + 1;
+      const projName = $(`proj_name_${projNameIdx}`)?.value.trim() || `案件${projNameIdx}`;
+      const [_yr, _mo, _dy] = dateStr.split('-');
+      const _displayDate = `${parseInt(_mo)}月${parseInt(_dy)}日`;
+      appendLog(`━━━━${_displayDate}：${projName}━━━━`);
+      appendLog('「残りすべて」設定を解除しました。', 'blue');
+    }
+
+    function applyColAllRest(projIdx) {
+      if (!hasConfiguredProjectAt(projIdx)) {
+        appendLog('案件と売上項目を設定した列でのみ全列「残りすべて」を使えます。', 'orange');
+        return;
+      }
+      const y = parseInt($('target_year').value, 10);
+      const m = parseInt($('target_month').value, 10);
+      if (!y || !m) return;
+      const days = daysInMonth(y, m);
+      let count = 0;
+      for (let d = 1; d <= days; d++) {
+        const dateStr = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+        const td = $(`time_cell_${dateStr}_${projIdx}`);
+        if (!td) continue;
+        const inp = td.querySelector('input.time-input');
+        const btn = td.querySelector('.rest-btn');
+        if (!inp || !btn) continue;
+        // skip if already set as rest
+        if (inp.getAttribute('data-rest-active') === 'true') continue;
+        // skip if another rest is already set on this row
+        const row = td.closest('tr');
+        const otherUsedBtn = row?.querySelector('.rest-btn.active');
+        if (otherUsedBtn && otherUsedBtn !== btn) continue;
+        applyRestTime(dateStr, projIdx, inp, btn);
+        count++;
+      }
+      const projNameIdx = projIdx + 1;
+      const projName = $(`proj_name_${projNameIdx}`)?.value.trim() || `案件${projNameIdx}`;
+      appendLog(`「${projName}」列の ${count} 日分を「残りすべて」に設定しました。`, 'green');
+    }
+
+    function clearColAll(projIdx) {
+      const y = parseInt($('target_year').value, 10);
+      const m = parseInt($('target_month').value, 10);
+      if (!y || !m) return;
+      const days = daysInMonth(y, m);
+      for (let d = 1; d <= days; d++) {
+        const dateStr = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+        const td = $(`time_cell_${dateStr}_${projIdx}`);
+        if (!td) continue;
+        const inp = td.querySelector('input.time-input');
+        const btn = td.querySelector('.rest-btn');
+        if (!inp || !btn) continue;
+        if (inp.getAttribute('data-rest-active') === 'true') {
+          resetRestTime(dateStr, projIdx, inp, btn);
+        } else {
+          inp.value = '';
+        }
+      }
+      const projNameIdx = projIdx + 1;
+      const projName = $(`proj_name_${projNameIdx}`)?.value.trim() || `案件${projNameIdx}`;
+      appendLog(`「${projName}」列をクリアしました。`, 'blue');
+    }
+
+    function collectProjects() {
+      const projects = [];
+      for (let i = 1; i <= 5; i++) {
+        const projectId = $(`proj_id_${i}`).value.trim();
+        const saleId = $(`proj_sale_${i}`).value.trim();
+        const name = $(`proj_name_${i}`).value.trim() || `案件${i}`;
+        if (!projectId || !saleId) continue;
+        projects.push({
+          col_index: i - 1,
+          project_id: Number(projectId),
+          sale_id: Number(saleId),
+          name
+        });
+      }
+      return projects;
+    }
+
+    function collectDailyTimes() {
+      const rows = Array.from($('grid-body').rows);
+      return rows.map(row => {
+        return Array.from(row.querySelectorAll('input.time-input')).map(i => {
+          if (i.getAttribute('data-rest-active') === 'true') return 'rest';
+          const v = i.value.trim();
+          if (!v) return null;
+          if (v.toLowerCase() === 'rest') return 'rest';
+          const n = Number(v);
+          return Number.isFinite(n) ? n : null;
+        });
+      });
+    }
+
+    function collectConfig() {
+      const m = mode();
+      return {
+        target_year: Number($('target_year').value),
+        target_month: Number($('target_month').value),
+        start_day: $('start_day').value ? Number($('start_day').value) : null,
+        end_day: $('end_day').value ? Number($('end_day').value) : null,
+
+        login_url: $('login_url').value.trim(),
+        daily_report_list_url: $('daily_report_list_url').value.trim(),
+        daily_report_data_url: $('daily_report_data_url').value.trim(),
+        work_registration_url: $('work_registration_url').value.trim(),
+        work_deletion_url: $('work_deletion_url').value.trim(),
+        fix_url: $('fix_url').value.trim(),
+        cancel_fix_url: $('cancel_fix_url').value.trim(),
+
+        registration_mode: m === 'registration',
+        bulk_delete: m === 'bulk_delete',
+        bulk_fix: m === 'bulk_fix',
+        bulk_cancel_fix: m === 'bulk_cancel_fix',
+        registration_bulk_fix: $('registration_bulk_fix').checked,
+
+        projects: collectProjects(),
+        daily_times: collectDailyTimes()
+      };
+    }
+
+    async function postJson(path, payload) {
+      const res = await fetch(path, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-Token': csrfToken
+        },
+        body: JSON.stringify(payload)
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(body.error || '通信に失敗しました。IDとパスワード、在宅の場合はVPN接続済みかを確認してください。');
+      }
+      return body;
+    }
+
+    function ensureStream() {
+      if (evtSource) return;
+      evtSource = new EventSource('/stream');
+      evtSource.onmessage = ev => {
+        try {
+          const data = JSON.parse(ev.data);
+          appendLog(data.message, data.color, data.done);
+          if (data.done) {
+            setRunningUI(false);
+            streamExpectingReconnect = true;
+            showCompletionModal();
+          }
+        } catch (e) {
+          appendLog(ev.data || 'ログ受信エラー', 'red');
+        }
+      };
+      evtSource.onerror = () => {
+        evtSource.close();
+        evtSource = null;
+        if (streamExpectingReconnect || isRunning) {
+          // 処理完了後サーバーが接続を閉じた場合、または実行中の一時的な切断 → 再接続
+          streamExpectingReconnect = false;
+          setTimeout(ensureStream, 2000);
+        } else {
+          // セッション切れなどによる切断 → ログイン画面へ
+          appendLog('ログストリームが切断されました。ログイン画面に戻ります...', 'red');
+          loginMessage.innerHTML = '';
+          setLoginMessage('セッションが切断されました。再度ログインしてください。', 'error');
+          setTimeout(() => setLoggedInUI(false), 2000);
+        }
+      };
+    }
+
+    async function bootstrap() {
+      loginSubmitBtn.disabled = true;
+      try {
+        const res = await fetch('/bootstrap');
+        const data = await res.json();
+        csrfToken = data.csrf_token || '';
+        isRunning = !!data.running;
+        isLoggedIn = !!data.logged_in;
+
+        loginSubmitBtn.disabled = !csrfToken || isRunning;
+        setRunningUI(isRunning);
+        setLoggedInUI(isLoggedIn);
+        if (isLoggedIn) await validateStoredProjectsAfterLogin();
+        ensureStream();
+      } catch (e) {
+        setLoginMessage('初期化に失敗しました。再読み込みしてください。', 'error');
+      }
+    }
+
+    async function login() {
+      const loginId = $('pre_login_id').value.trim();
+      const password = $('pre_password').value;
+      const loginUrl = $('login_url').value.trim();
+
+      if (!loginId || !password || !loginUrl) {
+        setLoginMessage('ログインID・パスワード・ログインURLを入力してください。', 'error');
+        return;
+      }
+
+      setLoginMessage('ログイン中...');
+      loginSubmitBtn.disabled = true;
+
+      try {
+        await postJson('/login', {
+          login_id: loginId,
+          password: password,
+          login_url: loginUrl
+        });
+
+        $('pre_password').value = '';
+        $('session_login_id').value = loginId;
+        $('session_login_url').value = loginUrl;
+        saveLoginIdStore(loginId);
+        logEl.innerHTML = '';
+        setLoginMessage('ログイン成功。', 'ok');
+        setLoggedInUI(true);
+        await validateStoredProjectsAfterLogin();
+      } catch (e) {
+        loginMessage.innerHTML = '';
+        setLoginMessage('ログインが失敗しました。以下を確認してください：', 'error');
+        setLoginMessage('ログインIDとパスワード', 'error', true);
+        setLoginMessage('社内ネットワークまたはVPNで接続しているか', 'error', true);
+        setLoginMessage('ZAC_COMPANY_ID または ZAC_BASE_URL を設定しているか', 'error', true);
+        appendLog(e.message, 'red');
+      } finally {
+        loginSubmitBtn.disabled = isRunning || !csrfToken;
+      }
+    }
+
+    async function logout() {
+      if (!confirm('ログアウトしますか？')) return;
+
+      try {
+        await postJson('/logout', {});
+        $('pre_password').value = '';
+        logEl.innerHTML = '';
+        loginMessage.innerHTML = '';
+        setLoginMessage('ログアウトしました。', 'ok');
+        setLoggedInUI(false);
+      } catch (e) {
+        appendLog(e.message, 'red');
+      }
+    }
+
+    async function run() {
+      if (!isLoggedIn) {
+        appendLog('先にログインしてください。', 'red');
+        return;
+      }
+      if (!validateForRun()) {
+        appendLog('必須項目を入力してください。', 'orange');
+        return;
+      }
+
+      hideCompletionModal();
+      setRunningUI(true);
+      appendLog('━━ 実行開始 ━━', 'blue');
+
+      try {
+        await postJson('/run', collectConfig());
+      } catch (e) {
+        appendLog(e.message, 'red');
+        setRunningUI(false);
+      }
+    }
+
+    // ── Project search helpers ───────────────────────────────────────────────
+
+    function getBaseUrl() {
+      const loginUrl = $('login_url').value.trim();
+      if (!loginUrl) return '';
+      try {
+        const url = new URL(loginUrl);
+        const parts = url.pathname.split('/').filter(Boolean);
+        if (!parts.length) return '';
+        return url.origin + '/' + parts[0];
+      } catch { return ''; }
+    }
+
+    function closeProjDropdown(idx) {
+      const dd = $(`proj_dropdown_${idx}`);
+      if (dd) { dd.classList.remove('open'); dd.innerHTML = ''; }
+    }
+
+    function closeSaleDropdown(idx) {
+      const dd = $(`proj_sale_dd_${idx}`);
+      if (dd) dd.classList.remove('open');
+    }
+
+    function clearProject(idx) {
+      const searchEl = $(`proj_search_${idx}`);
+      const hidId = $(`proj_id_${idx}`);
+      const hidName = $(`proj_name_${idx}`);
+      const hidSale = $(`proj_sale_${idx}`);
+      const trigText = $(`proj_sale_val_text_${idx}`);
+      const trigger = $(`proj_sale_trigger_${idx}`);
+      const dd = $(`proj_sale_dd_${idx}`);
+      if (searchEl) searchEl.value = '';
+      if (hidId) hidId.value = '';
+      if (hidName) hidName.value = '';
+      if (hidSale) hidSale.value = '';
+      if (trigText) { trigText.textContent = '← 案件を先に選択'; trigText.classList.remove('selected'); }
+      if (trigger) {
+        trigger.classList.add('disabled');
+        const existing = trigger.querySelector('.sale-badge');
+        if (existing) existing.remove();
+      }
+      if (dd) { dd.innerHTML = ''; dd.classList.remove('open'); }
+      setProjectInvalidTag(idx, false);
+      persistProjectSelection(idx);
+      updateProjectClearButton(idx);
+    }
+
+    async function searchProjects(keyword, idx) {
+      const baseUrl = getBaseUrl();
+      if (!baseUrl) {
+        appendLog('ログインURLが未設定のためプロジェクト検索ができません。', 'orange');
+        return;
+      }
+      const year = parseInt($('target_year').value, 10) || new Date().getFullYear();
+      const month = parseInt($('target_month').value, 10) || (new Date().getMonth() + 1);
+      const baseDate = `${year}-${String(month).padStart(2, '0')}-01`;
+      const dd = $(`proj_dropdown_${idx}`);
+      dd.innerHTML = '<div class="proj-dropdown-item" style="color:var(--muted)">検索中...</div>';
+      dd.classList.add('open');
+      try {
+        const res = await fetch(
+          `/api/project_search?keyword=${encodeURIComponent(keyword)}&base_url=${encodeURIComponent(baseUrl)}&base_date=${baseDate}`
+        );
+        if (!res.ok) throw new Error(`サーバーエラー ${res.status}`);
+        const data = await res.json();
+        renderProjectDropdown(data.Value || [], idx);
+      } catch (e) {
+        dd.innerHTML = `<div class="proj-dropdown-item" style="color:var(--danger)">${e.message}</div>`;
+      }
+    }
+
+    function renderProjectDropdown(items, idx) {
+      const dd = $(`proj_dropdown_${idx}`);
+      dd.innerHTML = '';
+      if (!items.length) {
+        const el = document.createElement('div');
+        el.className = 'proj-dropdown-item';
+        el.style.color = 'var(--muted)';
+        el.textContent = '該当なし';
+        dd.appendChild(el);
+        dd.classList.add('open');
+        return;
+      }
+      items.forEach(item => {
+        const label = item.Label || item.Item?.Name || '';
+        const code = item.Code || '';
+        const id = item.Id;
+        const div = document.createElement('div');
+        div.className = 'proj-dropdown-item';
+        const codeEl = document.createElement('span');
+        codeEl.className = 'proj-item-code';
+        codeEl.textContent = code;
+        const labelEl = document.createElement('span');
+        labelEl.className = 'proj-item-label';
+        labelEl.textContent = label;
+        div.append(codeEl, labelEl);
+        div.addEventListener('mousedown', e => {
+          e.preventDefault();
+          selectProject(idx, id, label, code);
+        });
+        dd.appendChild(div);
+      });
+      dd.classList.add('open');
+    }
+
+    function selectProject(idx, id, label, code) {
+      const searchEl = $(`proj_search_${idx}`);
+      const hidId = $(`proj_id_${idx}`);
+      const hidName = $(`proj_name_${idx}`);
+      if (searchEl) searchEl.value = code ? `${code}  ${label}` : label;
+      if (hidId) hidId.value = id;
+      if (hidName) hidName.value = label;
+      closeProjDropdown(idx);
+      const trigger = $(`proj_sale_trigger_${idx}`);
+      const trigText = $(`proj_sale_val_text_${idx}`);
+      const hidSale = $(`proj_sale_${idx}`);
+      if (trigText) { trigText.textContent = '読み込み中...'; trigText.classList.remove('selected'); }
+      if (hidSale) hidSale.value = '';
+      if (trigger) {
+        trigger.classList.remove('disabled');
+        const existing = trigger.querySelector('.sale-badge');
+        if (existing) existing.remove();
+      }
+      setProjectInvalidTag(idx, false);
+      persistProjectSelection(idx);
+      updateProjectClearButton(idx);
+      buildGrid();
+      loadProjectSales(id, idx);
+    }
+
+    async function loadProjectSales(projectId, idx) {
+      const baseUrl = getBaseUrl();
+      if (!baseUrl || !projectId) return;
+      const dd = $(`proj_sale_dd_${idx}`);
+      const trigText = $(`proj_sale_val_text_${idx}`);
+      if (dd) { dd.innerHTML = '<div class="proj-sale-item" style="color:var(--muted)">読み込み中...</div>'; dd.classList.add('open'); }
+      try {
+        const res = await fetch(
+          `/api/project_sales?id_project=${projectId}&base_url=${encodeURIComponent(baseUrl)}`
+        );
+        if (!res.ok) throw new Error(`エラー ${res.status}`);
+        const data = await res.json();
+        renderSaleOptions(data.Value || [], idx);
+      } catch (e) {
+        if (trigText) trigText.textContent = `取得失敗: ${e.message}`;
+        if (dd) { dd.innerHTML = `<div class="proj-sale-item" style="color:var(--danger)">${e.message}</div>`; }
+      }
+    }
+
+    function renderSaleOptions(items, idx) {
+      const dd = $(`proj_sale_dd_${idx}`);
+      const trigText = $(`proj_sale_val_text_${idx}`);
+      const hidSale = $(`proj_sale_${idx}`);
+      if (!dd) return;
+      dd.innerHTML = '';
+      if (!items.length) {
+        const el = document.createElement('div');
+        el.className = 'proj-sale-item';
+        el.style.color = 'var(--muted)';
+        el.textContent = '売上項目なし';
+        dd.appendChild(el);
+        if (trigText) trigText.textContent = '売上項目なし';
+        return;
+      }
+      items.forEach(item => {
+        const label = item.Label || item.Item?.Name || '';
+        const caption = item.Caption || '';
+        const id = item.Id;
+        const div = document.createElement('div');
+        div.className = 'proj-sale-item';
+        const labelEl = document.createElement('span');
+        labelEl.className = 'proj-sale-item-label';
+        labelEl.textContent = label;
+        div.appendChild(labelEl);
+        if (caption) {
+          const badge = document.createElement('span');
+          badge.className = 'sale-badge';
+          badge.textContent = caption;
+          div.appendChild(badge);
+        }
+        div.addEventListener('mousedown', e => {
+          e.preventDefault();
+          if (hidSale) hidSale.value = id;
+          if (trigText) { trigText.textContent = label; trigText.classList.add('selected'); }
+          // show / update badge on trigger
+          const trig = $(`proj_sale_trigger_${idx}`);
+          if (trig) {
+            const existing = trig.querySelector('.sale-badge');
+            if (existing) existing.remove();
+            if (caption) {
+              const b = document.createElement('span');
+              b.className = 'sale-badge';
+              b.textContent = caption;
+              const chev = trig.querySelector('.proj-sale-chevron');
+              chev ? trig.insertBefore(b, chev) : trig.appendChild(b);
+            }
+          }
+          persistProjectSelection(idx);
+          updateGridColumnActivation();
+          closeSaleDropdown(idx);
+        });
+        dd.appendChild(div);
+      });
+    }
+
+    function initProjects() {
+      const grid = $('proj-grid');
+
+      // close all dropdowns when clicking outside
+      document.addEventListener('click', e => {
+        for (let i = 1; i <= 5; i++) {
+          const sw = $(`proj_search_${i}`)?.closest('.proj-search-wrap');
+          const st = $(`proj_sale_trigger_${i}`)?.closest('.proj-sale-wrap');
+          if (sw && !sw.contains(e.target)) closeProjDropdown(i);
+          if (st && !st.contains(e.target)) closeSaleDropdown(i);
+        }
+      });
+
+      for (let i = 1; i <= 5; i++) {
+        // ── col 1: number ─────────────────────────────────────────
+        const num = document.createElement('div');
+        num.className = 'proj-num';
+        num.textContent = `案件${i}`;
+
+        // ── col 2: project search ─────────────────────────────────
+        const searchWrap = document.createElement('div');
+        searchWrap.className = 'proj-search-wrap';
+
+        const searchInput = document.createElement('input');
+        searchInput.type = 'text';
+        searchInput.id = `proj_search_${i}`;
+        searchInput.className = 'proj-search-input';
+        searchInput.placeholder = '案件名・コードで検索...';
+        searchInput.autocomplete = 'off';
+
+        const hidId = document.createElement('input');
+        hidId.type = 'hidden';
+        hidId.id = `proj_id_${i}`;
+
+        const hidName = document.createElement('input');
+        hidName.type = 'hidden';
+        hidName.id = `proj_name_${i}`;
+
+        const projDd = document.createElement('div');
+        projDd.className = 'proj-dropdown';
+        projDd.id = `proj_dropdown_${i}`;
+
+        const clearBtn = document.createElement('button');
+        clearBtn.type = 'button';
+        clearBtn.id = `proj_clear_btn_${i}`;
+        clearBtn.className = 'proj-clear-btn hidden';
+        clearBtn.title = 'この案件をクリア';
+        clearBtn.textContent = '×';
+
+        const invalidTag = document.createElement('span');
+        invalidTag.id = `proj_invalid_tag_${i}`;
+        invalidTag.className = 'proj-invalid-tag hidden';
+        invalidTag.textContent = '無効';
+
+        searchWrap.append(searchInput, hidId, hidName, projDd, clearBtn, invalidTag);
+
+        // ── col 3: sales picker ───────────────────────────────────
+        const saleWrap = document.createElement('div');
+        saleWrap.className = 'proj-sale-wrap';
+
+        const hidSale = document.createElement('input');
+        hidSale.type = 'hidden';
+        hidSale.id = `proj_sale_${i}`;
+
+        const trigger = document.createElement('div');
+        trigger.id = `proj_sale_trigger_${i}`;
+        trigger.className = 'proj-sale-trigger disabled';
+        trigger.setAttribute('role', 'button');
+        trigger.setAttribute('tabindex', '0');
+
+        const valText = document.createElement('span');
+        valText.className = 'proj-sale-value-text';
+        valText.id = `proj_sale_val_text_${i}`;
+        valText.textContent = '← 案件を先に選択';
+
+        const chevron = document.createElement('span');
+        chevron.className = 'proj-sale-chevron';
+        chevron.textContent = '▾';
+
+        trigger.append(valText, chevron);
+
+        const saleDd = document.createElement('div');
+        saleDd.className = 'proj-sale-dropdown';
+        saleDd.id = `proj_sale_dd_${i}`;
+
+        saleWrap.append(hidSale, trigger, saleDd);
+        grid.append(num, searchWrap, saleWrap);
+
+        // ── events ────────────────────────────────────────────────
+        const idx = i;
+        let debounceTimer = null;
+
+        searchInput.addEventListener('input', () => {
+          clearTimeout(debounceTimer);
+          setProjectInvalidTag(idx, false);
+          updateProjectClearButton(idx);
+          const kw = searchInput.value.trim();
+          if (!kw) {
+            closeProjDropdown(idx);
+            clearProject(idx);
+            buildGrid();
+            return;
+          }
+          debounceTimer = setTimeout(() => searchProjects(kw, idx), 350);
+        });
+
+        searchInput.addEventListener('blur', () => {
+          setTimeout(() => closeProjDropdown(idx), 200);
+        });
+
+        clearBtn.addEventListener('click', () => {
+          closeProjDropdown(idx);
+          closeSaleDropdown(idx);
+          clearProject(idx);
+          buildGrid();
+        });
+
+        trigger.addEventListener('click', () => {
+          if (trigger.classList.contains('disabled')) return;
+          const dd = $(`proj_sale_dd_${idx}`);
+          const projectId = $(`proj_id_${idx}`)?.value?.trim();
+          if (!dd) return;
+          if (dd.classList.contains('open')) {
+            dd.classList.remove('open');
+          } else {
+            // close other sale dropdowns
+            for (let j = 1; j <= 5; j++) { if (j !== idx) closeSaleDropdown(j); }
+            if (projectId) {
+              loadProjectSales(projectId, idx);
+            } else {
+              dd.classList.add('open');
+            }
+          }
+        });
+
+        trigger.addEventListener('keydown', e => {
+          if (e.key === 'Enter' || e.key === ' ') trigger.click();
+        });
+
+        restoreProjectSelection(idx);
+        updateProjectClearButton(idx);
+      }
+      updateGridColumnActivation();
+    }
+
+    function bindEvents() {
+      $('target_year').addEventListener('change', buildGrid);
+      $('target_month').addEventListener('change', buildGrid);
+
+      document.querySelectorAll('input[name="mode"]').forEach(el => {
+        el.addEventListener('change', applyModeUI);
+      });
+
+      $('clear-log').addEventListener('click', () => {
+        logEl.innerHTML = '';
+      });
+
+      $('how-to-btn').addEventListener('click', () => {
+        $('how-to-modal').classList.remove('hidden');
+      });
+      $('how-to-close').addEventListener('click', () => {
+        $('how-to-modal').classList.add('hidden');
+      });
+      $('how-to-modal').addEventListener('click', (e) => {
+        if (e.target === $('how-to-modal')) $('how-to-modal').classList.add('hidden');
+      });
+
+      $('completion-close').addEventListener('click', () => {
+        hideCompletionModal();
+      });
+      $('completion-modal').addEventListener('click', (e) => {
+        if (e.target === $('completion-modal')) hideCompletionModal();
+      });
+      $('completion-login-link').addEventListener('click', (e) => {
+        if (e.currentTarget.classList.contains('disabled')) e.preventDefault();
+      });
+
+      $('pre_login_id').addEventListener('input', (e) => {
+        saveLoginIdStore(e.target.value);
+      });
+
+      loginSubmitBtn.addEventListener('click', login);
+      logoutBtn.addEventListener('click', logout);
+      runBtn.addEventListener('click', run);
+    }
+
+    restoreLoginIdStore();
+    initProjects();
+    bindEvents();
+
+    // Set current year as default
+    const now = new Date();
+    $('target_year').value = now.getFullYear();
+
+    buildGrid();
+    applyModeUI();
+    bootstrap();
+  </script>
+</body>
+
+</html>
