@@ -33,3 +33,6 @@ data/zac_info_sheet.xlsx
 # Unused files
 unused/
 
+AGENTS.md
+docs/
+.github/copilot-instructions.md
